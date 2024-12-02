@@ -1,0 +1,29 @@
+{
+  "name": "openapi2csv",
+  "version": "1.0.0",
+  "description": "Memory-efficient Node.js tool to convert large OpenAPI specifications into CSV format for RAG systems",
+  "main": "index.js",
+  "bin": {
+    "openapi2csv": "./cli.js"
+  },
+  "scripts": {
+    "start": "node cli.js",
+    "postinstall": "chmod +x ./cli.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "openapi",
+    "csv",
+    "converter",
+    "rag",
+    "cli"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "commander": "^12.1.0",
+    "csv-writer": "^1.6.0",
+    "fs-extra": "^11.2.0",
+    "js-yaml": "^4.1.0"
+  }
+}
