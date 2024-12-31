@@ -51,9 +51,19 @@ Options:
   -i, --input <path>     Input OpenAPI spec file (default: "./spec.json")
   -o, --output <path>    Output directory for CSV file (default: "./output")
   -f, --format <type>    Input format type (json/yaml) (default: "json")
+  --output-format <type>  Output format type (default/csv-to-rag) (default: "default")
+  -d, --delimiter <char>  CSV delimiter character (default: ";")
   -b, --batch-size <size> Number of paths to process per batch (default: "100")
   -v, --verbose         Enable verbose logging
-```
+
+### Output Format Options
+- **default**: The standard format with the following columns:
+  `ENDPOINT;METHOD;SUMMARY;DESCRIPTION;PARAMETERS;REQUEST_BODY;RESPONSES;TAGS;SECURITY;SERVERS;SCHEMAS`
+- **csv-to-rag**: An optimized format for RAG systems with the following columns:
+  `code (unique ID), metadata_small, metadata_big_1, metadata_big_2, metadata_big_3`
+
+### Delimiter Option
+- You can specify a custom delimiter using the `--delimiter` option. The default is `;`.
 
 ## Output Format
 

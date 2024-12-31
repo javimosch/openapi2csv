@@ -85,32 +85,65 @@ async function* pathGenerator(spec, batchSize) {
   }
 }
 
-function flattenEndpoint(path, method, operation, spec) {
+function flattenEndpoint(path, method, operation, spec, outputFormat) {
   // Get only relevant schemas for this endpoint
   const relevantSchemas = getRelevantSchemas(operation, spec.components?.schemas || {});
 
-  return {
-    endpoint: path,
-    method: method.toUpperCase(),
-    summary: operation.summary || '',
-    description: operation.description || '',
-    parameters: safeStringify(operation.parameters || []),
-    requestBody: safeStringify(operation.requestBody || {}),
-    responses: safeStringify(operation.responses || {}),
-    tags: safeStringify(operation.tags || []),
-    security: safeStringify(operation.security || []),
-    servers: safeStringify(spec.servers || []),
-    schemas: safeStringify(relevantSchemas)
-  };
+  if (outputFormat === 'csv-to-rag') {
+    // Format metadata_small as JSON with method, summary, description, and parameters
+    const metadata_small = {
+      method: method.toUpperCase(),
+      summary: operation.summary || '',
+      description: operation.description || '',
+      parameters: operation.parameters || []
+    };
+
+    // Format metadata_big_1 with request/response info
+    const metadata_big_1 = {
+      requestBody: operation.requestBody || {},
+      responses: operation.responses || {},
+      tags: operation.tags || [],
+      security: operation.security || [],
+      servers: spec.servers || []
+    };
+
+    // metadata_big_2 contains schemas
+    const metadata_big_2 = relevantSchemas;
+
+    // metadata_big_3 is left empty for future use
+    const metadata_big_3 = {};
+
+    return {
+      code: path,
+      metadata_small: safeStringify(metadata_small),
+      metadata_big_1: safeStringify(metadata_big_1),
+      metadata_big_2: safeStringify(metadata_big_2),
+      metadata_big_3: safeStringify(metadata_big_3)
+    };
+  } else {
+    return {
+      endpoint: path,
+      method: method.toUpperCase(),
+      summary: operation.summary || '',
+      description: operation.description || '',
+      parameters: safeStringify(operation.parameters || []),
+      requestBody: safeStringify(operation.requestBody || {}),
+      responses: safeStringify(operation.responses || {}),
+      tags: safeStringify(operation.tags || []),
+      security: safeStringify(operation.security || []),
+      servers: safeStringify(spec.servers || []),
+      schemas: safeStringify(relevantSchemas)
+    };
+  }
 }
 
-async function processInBatches(spec, csvWriter, batchSize, verbose) {
+async function processInBatches(spec, csvWriter, batchSize, verbose, outputFormat) {
   const generator = pathGenerator(spec, batchSize);
   let totalEndpoints = 0;
   
   for await (const batch of generator) {
     const records = batch.map(({ path, method, operation }) => 
-      flattenEndpoint(path, method, operation, spec)
+      flattenEndpoint(path, method, operation, spec, outputFormat)
     );
     await csvWriter.writeRecords(records);
     totalEndpoints += records.length;
@@ -122,7 +155,7 @@ async function processInBatches(spec, csvWriter, batchSize, verbose) {
 }
 
 async function convertSpec(options) {
-  const { input, output, format, batchSize = 100, verbose = false } = options;
+  const { input, output, format, outputFormat = 'default', batchSize = 100, delimiter = ';', verbose = false } = options;
 
   try {
     // Increase heap size for the JSON parse operation
@@ -151,7 +184,14 @@ async function convertSpec(options) {
     if (verbose) console.log('Setting up CSV writer...');
     const csvWriter = createObjectCsvWriter({
       path: path.join(output, 'api_spec.csv'),
-      header: [
+      fieldDelimiter: delimiter,
+      header: outputFormat === 'csv-to-rag' ? [
+        { id: 'code', title: 'code' },
+        { id: 'metadata_small', title: 'metadata_small' },
+        { id: 'metadata_big_1', title: 'metadata_big_1' },
+        { id: 'metadata_big_2', title: 'metadata_big_2' },
+        { id: 'metadata_big_3', title: 'metadata_big_3' }
+      ] : [
         { id: 'endpoint', title: 'ENDPOINT' },
         { id: 'method', title: 'METHOD' },
         { id: 'summary', title: 'SUMMARY' },
@@ -167,7 +207,7 @@ async function convertSpec(options) {
     });
 
     if (verbose) console.log('Processing spec in batches...');
-    const totalEndpoints = await processInBatches(spec, csvWriter, batchSize, verbose);
+    const totalEndpoints = await processInBatches(spec, csvWriter, batchSize, verbose, outputFormat);
     
     if (verbose) {
       console.log(`Successfully converted OpenAPI spec to CSV: ${path.join(output, 'api_spec.csv')}`);
