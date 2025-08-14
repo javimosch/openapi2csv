@@ -6,6 +6,101 @@ const { createObjectCsvWriter } = require('./utils/csv-writer');
 // Maximum size for stringified objects (1MB)
 const MAX_STRING_SIZE = 1024 * 1024;
 
+/**
+ * Check if any data contains the specified delimiter
+ * @param {Object} spec OpenAPI spec object
+ * @param {string} delimiter The delimiter to check for
+ * @returns {Object} Result with found flag and details
+ */
+function checkDelimiterConflicts(spec, delimiter) {
+  const conflicts = [];
+  
+  // Helper to check if a string contains the delimiter
+  const containsDelimiter = (str) => str && str.includes(delimiter);
+  
+  // Helper to add conflict details
+  const addConflict = (location, value, path) => {
+    conflicts.push({
+      location,
+      value: value.substring(0, 200), // Truncate long values
+      path
+    });
+  };
+  
+  // Check all paths and their operations
+  if (spec.paths) {
+    for (const [pathKey, pathItem] of Object.entries(spec.paths)) {
+      if (pathItem) {
+        for (const [method, operation] of Object.entries(pathItem)) {
+          if (typeof operation === 'object' && operation !== null) {
+            // Check summary
+            if (containsDelimiter(operation.summary || '')) {
+              addConflict('summary', operation.summary, `${method.toUpperCase()} ${pathKey}`);
+            }
+            
+            // Check description
+            if (containsDelimiter(operation.description || '')) {
+              addConflict('description', operation.description, `${method.toUpperCase()} ${pathKey}`);
+            }
+            
+            // Check parameter names and descriptions
+            if (operation.parameters) {
+              operation.parameters.forEach((param, index) => {
+                if (containsDelimiter(param.name || '')) {
+                  addConflict('parameter name', param.name, `${method.toUpperCase()} ${pathKey}.parameters[${index}]`);
+                }
+                if (containsDelimiter(param.description || '')) {
+                  addConflict('parameter description', param.description, `${method.toUpperCase()} ${pathKey}.parameters[${index}]`);
+                }
+              });
+            }
+            
+            // Check request body descriptions
+            if (operation.requestBody && operation.requestBody.description) {
+              if (containsDelimiter(operation.requestBody.description)) {
+                addConflict('requestBody description', operation.requestBody.description, `${method.toUpperCase()} ${pathKey}.requestBody`);
+              }
+            }
+            
+            // Check response descriptions
+            if (operation.responses) {
+              for (const [status, response] of Object.entries(operation.responses)) {
+                if (response && response.description && containsDelimiter(response.description)) {
+                  addConflict('response description', response.description, `${method.toUpperCase()} ${pathKey}.responses[${status}]`);
+                }
+              }
+            }
+            
+            // Check tag names
+            if (operation.tags) {
+              operation.tags.forEach((tag, index) => {
+                if (containsDelimiter(tag)) {
+                  addConflict('tag', tag, `${method.toUpperCase()} ${pathKey}.tags[${index}]`);
+                }
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // Check schema definitions
+  if (spec.components && spec.components.schemas) {
+    for (const [schemaName, schema] of Object.entries(spec.components.schemas)) {
+      if (schema && schema.description && containsDelimiter(schema.description)) {
+        addConflict('schema description', schema.description, `components.schemas.${schemaName}`);
+      }
+    }
+  }
+  
+  return {
+    hasConflicts: conflicts.length > 0,
+    conflicts,
+    totalConflicts: conflicts.length
+  };
+}
+
 function safeStringify(obj) {
   try {
     const str = JSON.stringify(obj);
@@ -155,32 +250,58 @@ async function processInBatches(spec, csvWriter, batchSize, verbose, outputForma
 }
 
 async function convertSpec(options) {
-  const { input, output, format, outputFormat = 'default', batchSize = 100, delimiter = ';', delimiterHeader, verbose = false } = options;
+  const { input, output, format, outputFormat = 'default', batchSize = 100, delimiter = ';', delimiterHeader, control = false, verbose = false } = options;
   let csvWriter = null;
 
   try {
+    // Ensure output directory exists
+    await fs.ensureDir(output);
+    
     // Increase heap size for the JSON parse operation
     const maxOldSpace = process.env.NODE_OPTIONS?.includes('--max-old-space-size') || 
       process.execArgv.some(arg => arg.includes('--max-old-space-size'));
     
     if (!maxOldSpace) {
-      if (verbose) console.log('Increasing Node.js heap size...');
-      const subprocess = require('child_process').spawn(process.argv[0], 
-        ['--max-old-space-size=8192', ...process.argv.slice(1)], {
-          stdio: 'inherit'
-        });
-      subprocess.on('exit', (code) => process.exit(code));
-      return;
+      process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + ' --max-old-space-size=4096';
     }
-
-    // Ensure output directory exists
-    await fs.ensureDir(output);
     
     if (verbose) console.log('Reading OpenAPI spec file...');
     const content = await fs.readFile(input, 'utf8');
     
     if (verbose) console.log('Parsing spec file...');
     const spec = format === 'yaml' ? yaml.load(content) : JSON.parse(content);
+    
+    // Check for delimiter conflicts if control mode is enabled
+    if (control) {
+      if (verbose) console.log('Checking for delimiter conflicts...');
+      const conflictCheck = checkDelimiterConflicts(spec, delimiter);
+      
+      if (conflictCheck.hasConflicts) {
+        console.error('\n❌ DELIMITER CONFLICT DETECTED!');
+        console.error(`Found ${conflictCheck.totalConflicts} conflict(s) with delimiter "${delimiter}":\n`);
+        
+        // Show first few conflicts
+        const maxConflictsToShow = 5;
+        conflictCheck.conflicts.slice(0, maxConflictsToShow).forEach((conflict, index) => {
+          console.error(`${index + 1}. Location: ${conflict.location}`);
+          console.error(`   Path: ${conflict.path}`);
+          console.error(`   Value: "${conflict.value}"\n`);
+        });
+        
+        if (conflictCheck.totalConflicts > maxConflictsToShow) {
+          console.error(`... and ${conflictCheck.totalConflicts - maxConflictsToShow} more conflicts.`);
+        }
+        
+        console.error(`\n💡 Suggestions:`);
+        console.error(`   - Use a different delimiter with -d "<new-delimiter>"`);
+        console.error(`   - Disable this check with --no-control`);
+        console.error(`   - Review the conflicting data and update your spec file\n`);
+        
+        return { success: false, error: 'Delimiter conflicts detected', conflicts: conflictCheck.conflicts };
+      }
+      
+      if (verbose) console.log('✅ No delimiter conflicts found');
+    }
     
     if (verbose) console.log('Setting up CSV writer...');
     csvWriter = createObjectCsvWriter({

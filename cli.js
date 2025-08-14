@@ -6,15 +6,16 @@ const converter = require('./index.js');
 
 program
   .name('openapi2csv')
-  .description('Convert OpenAPI specification to CSV format for RAG systems')
+  .description('Convert OpenAPI specifications to CSV format')
   .version('1.0.0')
-  .option('-i, --input <path>', 'Input OpenAPI spec file', './spec.json')
-  .option('-o, --output <path>', 'Output directory for CSV file', './output')
-  .option('-f, --format <type>', 'Input format type (json/yaml)', 'json')
-  .option('--output-format <type>', 'Output format type (default/csv-to-rag)', 'default')
-  .option('-b, --batch-size <size>', 'Number of paths to process per batch', '100')
+  .option('-i, --input <file>', 'Input OpenAPI specification file (JSON or YAML)', './spec.json')
+  .option('-o, --output <dir>', 'Output directory for CSV files', './output')
+  .option('-f, --format <format>', 'Input format: json or yaml', 'json')
+  .option('--output-format <format>', 'Output format: default or csv-to-rag', 'default')
+  .option('-b, --batch-size <number>', 'Batch size for processing', '100')
   .option('-d, --delimiter <char>', 'CSV delimiter character', ';')
-  .option('-dh, --delimiter-header <char>', 'CSV header delimiter character (defaults to data delimiter)')
+  .option('-dh, --delimiter-header <char>', 'CSV delimiter for header row (defaults to data delimiter)')
+  .option('-c, --control', 'Pre-check for data delimiter conflicts and abort if found')
   .option('-v, --verbose', 'Enable verbose logging')
   .action(async (options) => {
     try {
@@ -34,7 +35,7 @@ program
       }
 
       // Start the conversion
-      await converter.convertSpec({
+      const result = await converter.convertSpec({
         input: inputPath,
         output: outputPath,
         format: options.format,
@@ -42,6 +43,7 @@ program
         batchSize: parseInt(options.batchSize),
         delimiter: options.delimiter,
         delimiterHeader: options.delimiterHeader,
+        control: options.control,
         verbose: options.verbose
       });
 
