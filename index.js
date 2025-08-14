@@ -1,10 +1,69 @@
 const fs = require('fs-extra');
 const yaml = require('js-yaml');
-const { createObjectCsvWriter } = require('csv-writer');
 const path = require('path');
 
 // Maximum size for stringified objects (1MB)
 const MAX_STRING_SIZE = 1024 * 1024;
+
+// Custom CSV writer to support any delimiter including pipe
+class CustomCsvWriter {
+  constructor(options) {
+    this.path = options.path;
+    this.delimiter = options.fieldDelimiter || ',';
+    this.headerDelimiter = options.headerDelimiter || this.delimiter;
+    this.header = options.header || [];
+    this.initialized = false;
+  }
+
+  async writeRecords(records) {
+    if (!this.initialized) {
+      // Write header if this is the first write
+      if (this.header.length > 0) {
+        const headerRow = this.header.map(col => this.escapeField(col.title || col.id, this.headerDelimiter)).join(this.headerDelimiter);
+        await fs.writeFile(this.path, headerRow + '\n');
+        this.initialized = true;
+      } else {
+        // Create empty file if no header
+        await fs.writeFile(this.path, '');
+        this.initialized = true;
+      }
+    }
+
+    if (records.length === 0) return;
+
+    const rows = records.map(record => {
+      return this.header.map(col => {
+        const value = record[col.id] || '';
+        return this.escapeField(String(value));
+      }).join(this.delimiter);
+    }).join('\n') + '\n';
+
+    await fs.appendFile(this.path, rows);
+  }
+
+  escapeField(field, delimiter = null) {
+    const effectiveDelimiter = delimiter || this.delimiter;
+    if (field === null || field === undefined) return '';
+    
+    const str = String(field);
+    
+    // If field contains delimiter, quote, or newline, wrap in quotes and escape internal quotes
+    if (str.includes(effectiveDelimiter) || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+      return '"' + str.replace(/"/g, '""') + '"';
+    }
+    
+    return str;
+  }
+
+  async close() {
+    // No-op for this implementation since we use writeFile/appendFile
+    return Promise.resolve();
+  }
+}
+
+function createObjectCsvWriter(options) {
+  return new CustomCsvWriter(options);
+}
 
 function safeStringify(obj) {
   try {
@@ -155,7 +214,8 @@ async function processInBatches(spec, csvWriter, batchSize, verbose, outputForma
 }
 
 async function convertSpec(options) {
-  const { input, output, format, outputFormat = 'default', batchSize = 100, delimiter = ';', verbose = false } = options;
+  const { input, output, format, outputFormat = 'default', batchSize = 100, delimiter = ';', delimiterHeader, verbose = false } = options;
+  let csvWriter = null;
 
   try {
     // Increase heap size for the JSON parse operation
@@ -182,9 +242,10 @@ async function convertSpec(options) {
     const spec = format === 'yaml' ? yaml.load(content) : JSON.parse(content);
     
     if (verbose) console.log('Setting up CSV writer...');
-    const csvWriter = createObjectCsvWriter({
+    csvWriter = createObjectCsvWriter({
       path: path.join(output, 'api_spec.csv'),
       fieldDelimiter: delimiter,
+      headerDelimiter: delimiterHeader || delimiter,
       header: outputFormat === 'csv-to-rag' ? [
         { id: 'code', title: 'code' },
         { id: 'metadata_small', title: 'metadata_small' },
@@ -209,6 +270,11 @@ async function convertSpec(options) {
     if (verbose) console.log('Processing spec in batches...');
     const totalEndpoints = await processInBatches(spec, csvWriter, batchSize, verbose, outputFormat);
     
+    // Close the CSV writer
+    if (csvWriter.close) {
+      await csvWriter.close();
+    }
+    
     if (verbose) {
       console.log(`Successfully converted OpenAPI spec to CSV: ${path.join(output, 'api_spec.csv')}`);
       console.log(`Total endpoints processed: ${totalEndpoints}`);
@@ -220,6 +286,10 @@ async function convertSpec(options) {
       totalEndpoints
     };
   } catch (error) {
+    // Ensure CSV writer is closed on error
+    if (csvWriter && csvWriter.close) {
+      await csvWriter.close().catch(() => {});
+    }
     throw error;
   }
 }

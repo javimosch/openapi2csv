@@ -14,6 +14,7 @@ program
   .option('--output-format <type>', 'Output format type (default/csv-to-rag)', 'default')
   .option('-b, --batch-size <size>', 'Number of paths to process per batch', '100')
   .option('-d, --delimiter <char>', 'CSV delimiter character', ';')
+  .option('-dh, --delimiter-header <char>', 'CSV header delimiter character (defaults to data delimiter)')
   .option('-v, --verbose', 'Enable verbose logging')
   .action(async (options) => {
     try {
@@ -29,6 +30,7 @@ program
         console.log('- Output format:', options.outputFormat);
         console.log('- Batch size:', options.batchSize);
         console.log('- Delimiter:', options.delimiter);
+        console.log('- Header delimiter:', options.delimiterHeader || options.delimiter);
       }
 
       // Start the conversion
@@ -39,6 +41,7 @@ program
         outputFormat: options.outputFormat,
         batchSize: parseInt(options.batchSize),
         delimiter: options.delimiter,
+        delimiterHeader: options.delimiterHeader,
         verbose: options.verbose
       });
 
