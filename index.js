@@ -1,69 +1,10 @@
 const fs = require('fs-extra');
 const yaml = require('js-yaml');
 const path = require('path');
+const { createObjectCsvWriter } = require('./utils/csv-writer');
 
 // Maximum size for stringified objects (1MB)
 const MAX_STRING_SIZE = 1024 * 1024;
-
-// Custom CSV writer to support any delimiter including pipe
-class CustomCsvWriter {
-  constructor(options) {
-    this.path = options.path;
-    this.delimiter = options.fieldDelimiter || ',';
-    this.headerDelimiter = options.headerDelimiter || this.delimiter;
-    this.header = options.header || [];
-    this.initialized = false;
-  }
-
-  async writeRecords(records) {
-    if (!this.initialized) {
-      // Write header if this is the first write
-      if (this.header.length > 0) {
-        const headerRow = this.header.map(col => this.escapeField(col.title || col.id, this.headerDelimiter)).join(this.headerDelimiter);
-        await fs.writeFile(this.path, headerRow + '\n');
-        this.initialized = true;
-      } else {
-        // Create empty file if no header
-        await fs.writeFile(this.path, '');
-        this.initialized = true;
-      }
-    }
-
-    if (records.length === 0) return;
-
-    const rows = records.map(record => {
-      return this.header.map(col => {
-        const value = record[col.id] || '';
-        return this.escapeField(String(value));
-      }).join(this.delimiter);
-    }).join('\n') + '\n';
-
-    await fs.appendFile(this.path, rows);
-  }
-
-  escapeField(field, delimiter = null) {
-    const effectiveDelimiter = delimiter || this.delimiter;
-    if (field === null || field === undefined) return '';
-    
-    const str = String(field);
-    
-    // If field contains delimiter, quote, or newline, wrap in quotes and escape internal quotes
-    if (str.includes(effectiveDelimiter) || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-      return '"' + str.replace(/"/g, '""') + '"';
-    }
-    
-    return str;
-  }
-
-  async close() {
-    // No-op for this implementation since we use writeFile/appendFile
-    return Promise.resolve();
-  }
-}
-
-function createObjectCsvWriter(options) {
-  return new CustomCsvWriter(options);
-}
 
 function safeStringify(obj) {
   try {
