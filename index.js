@@ -114,7 +114,7 @@ function flattenEndpoint(path, method, operation, spec, outputFormat) {
     const metadata_big_3 = {};
 
     return {
-      code: path,
+      code: `${method.toUpperCase()}${path}`,
       metadata_small: safeStringify(metadata_small),
       metadata_big_1: safeStringify(metadata_big_1),
       metadata_big_2: safeStringify(metadata_big_2),

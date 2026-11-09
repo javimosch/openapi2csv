@@ -60,7 +60,11 @@ Options:
 - **default**: The standard format with the following columns:
   `ENDPOINT;METHOD;SUMMARY;DESCRIPTION;PARAMETERS;REQUEST_BODY;RESPONSES;TAGS;SECURITY;SERVERS;SCHEMAS`
 - **csv-to-rag**: An optimized format for RAG systems with the following columns:
-  `code (unique ID), metadata_small, metadata_big_1, metadata_big_2, metadata_big_3`
+  - `code`: Unique ID composed of METHOD+ENDPOINT (e.g., "GET/users", "POST/users/{id}")
+  - `metadata_small`: Brief metadata for quick retrieval
+  - `metadata_big_1`: Detailed metadata part 1
+  - `metadata_big_2`: Detailed metadata part 2
+  - `metadata_big_3`: Detailed metadata part 3
 
 ### Delimiter Option
 - You can specify a custom delimiter using the `--delimiter` option. The default is `;`.
